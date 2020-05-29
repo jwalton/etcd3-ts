@@ -173,7 +173,7 @@ export class EtcdClient {
         await pb.call((done: any) => client.put(putRequest, done));
     }
 
-    async kvGet(key: string): Promise<string | Uint8Array | undefined> {
+    async kvGet(key: string): Promise<string | undefined> {
         const host = sample(this.hosts);
 
         const client = new KVClient(host, this.credentials);
@@ -193,7 +193,7 @@ export class EtcdClient {
         }
     }
 
-    async kvDelete(key: string): Promise<string | Uint8Array | undefined> {
+    async kvDelete(key: string): Promise<string | undefined> {
         const host = sample(this.hosts);
 
         const client = new KVClient(host, this.credentials);
@@ -204,7 +204,12 @@ export class EtcdClient {
         );
         const list = result.getPrevKvsList();
         if (list[0]) {
-            return list[0].getValue();
+            const val = list[0].getValue();
+            if (typeof val === 'string') {
+                return val;
+            } else {
+                return Buffer.from(val).toString('utf-8');
+            }
         } else {
             return undefined;
         }
