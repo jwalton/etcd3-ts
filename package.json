@@ -1,6 +1,6 @@
 {
   "name": "etcd3-ts",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Etcd3 bindings in Typescript",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
