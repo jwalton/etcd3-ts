@@ -1,0 +1,13 @@
+node_modules
+/notes.md
+/dist
+/.nyc_output
+/coverage
+/npm-debug.log
+/yarn-error.log
+/package-lock.json
+/yarn.lock
+/etcd
+/src/client
+/proto/etcd
+/proto/gogoproto
