@@ -148,7 +148,7 @@ export class EtcdClient {
         await this.withLease({ ttl, host }, async (leaseId) => {
             const lockClient = new LockClient(host, this.credentials);
             const lockRequest = new LockRequest();
-            lockRequest.setName(name);
+            lockRequest.setName(Buffer.from(name, 'utf-8'));
             lockRequest.setLease(leaseId);
             const lockResponse: LockResponse = await pb.call((done: any) =>
                 lockClient.lock(lockRequest, done)
@@ -168,7 +168,7 @@ export class EtcdClient {
         const host = sample(this.hosts);
         const client = new KVClient(host, this.credentials);
         const putRequest = new PutRequest();
-        putRequest.setKey(key);
+        putRequest.setKey(Buffer.from(key, 'utf-8'));
         putRequest.setValue(Buffer.from(value, 'utf-8'));
         await pb.call((done: any) => client.put(putRequest, done));
     }
@@ -178,7 +178,7 @@ export class EtcdClient {
 
         const client = new KVClient(host, this.credentials);
         const getRequest = new RangeRequest();
-        getRequest.setKey(key);
+        getRequest.setKey(Buffer.from(key, 'utf-8'));
         const result: RangeResponse = await pb.call((done: any) => client.range(getRequest, done));
         const list = result.getKvsList();
         if (list[0]) {
@@ -198,7 +198,7 @@ export class EtcdClient {
 
         const client = new KVClient(host, this.credentials);
         const deleteRequest = new DeleteRangeRequest();
-        deleteRequest.setKey(key);
+        deleteRequest.setKey(Buffer.from(key, 'utf-8'));
         const result: DeleteRangeResponse = await pb.call((done: any) =>
             client.deleteRange(deleteRequest, done)
         );
