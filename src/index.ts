@@ -7,13 +7,18 @@ import {
     LockResponse,
     UnlockRequest,
 } from './client/etcd/etcdserver/api/v3lock/v3lockpb/v3lock_pb';
-import { LeaseClient } from './client/etcd/etcdserver/etcdserverpb/rpc_grpc_pb';
+import { KVClient, LeaseClient } from './client/etcd/etcdserver/etcdserverpb/rpc_grpc_pb';
 import {
+    DeleteRangeRequest,
+    DeleteRangeResponse,
     LeaseGrantRequest,
     LeaseGrantResponse,
     LeaseKeepAliveRequest,
     LeaseKeepAliveResponse,
     LeaseRevokeRequest,
+    PutRequest,
+    RangeRequest,
+    RangeResponse,
 } from './client/etcd/etcdserver/etcdserverpb/rpc_pb';
 
 const LEASE_RETRY_COUNT = 1000;
@@ -145,5 +150,46 @@ export class EtcdClient {
                 await pb.call((done: any) => lockClient.unlock(unlockRequest, done));
             }
         });
+    }
+
+    async kvPut(key: string, value: string): Promise<void> {
+        const client = new KVClient(this.host, this.credentials);
+        const putRequest = new PutRequest();
+        putRequest.setKey(key);
+        putRequest.setValue(Buffer.from(value, 'utf-8'));
+        await pb.call((done: any) => client.put(putRequest, done));
+    }
+
+    async kvGet(key: string): Promise<string | Uint8Array | undefined> {
+        const client = new KVClient(this.host, this.credentials);
+        const getRequest = new RangeRequest();
+        getRequest.setKey(key);
+        const result: RangeResponse = await pb.call((done: any) => client.range(getRequest, done));
+        const list = result.getKvsList();
+        if (list[0]) {
+            const val = list[0].getValue();
+            if(typeof val === 'string') {
+                return val;
+            } else {
+                return Buffer.from(val).toString('utf-8');
+            }
+        } else {
+            return undefined;
+        }
+    }
+
+    async kvDelete(key: string): Promise<string | Uint8Array | undefined> {
+        const client = new KVClient(this.host, this.credentials);
+        const deleteRequest = new DeleteRangeRequest();
+        deleteRequest.setKey(key);
+        const result: DeleteRangeResponse = await pb.call((done: any) =>
+            client.deleteRange(deleteRequest, done)
+        );
+        const list = result.getPrevKvsList();
+        if (list[0]) {
+            return list[0].getValue();
+        } else {
+            return undefined;
+        }
     }
 }
