@@ -24,16 +24,25 @@ import {
 const LEASE_RETRY_COUNT = 1000;
 const MIN_LEASE_NUMBER = 100000;
 
+function sample<T>(arr: T[]): T {
+    const index = Math.floor(Math.random() * arr.length);
+    return arr[index];
+}
+
 export class EtcdClient {
-    private host: string;
+    private hosts: string[];
     private credentials: grpc.ChannelCredentials;
     private _nextLeaseNumber: number = Math.max(
         Math.floor((Number.MAX_SAFE_INTEGER / 2) * Math.random()),
         MIN_LEASE_NUMBER
     );
 
-    constructor(host: string) {
-        this.host = host;
+    constructor(options: { hosts: string[] } | string) {
+        if (typeof options === 'string') {
+            this.hosts = [options];
+        } else {
+            this.hosts = options.hosts;
+        }
         this.credentials = grpc.credentials.createInsecure();
     }
 
@@ -70,9 +79,9 @@ export class EtcdClient {
         stream.on('data', (_data: LeaseKeepAliveResponse) => {
             // console.log(`Got keepalive for ${data.getId()}`);
         });
-        stream.on('error', (_err) => {
+        stream.on('error', (err) => {
             // TODO: How do we publish this error?
-            stream.end();
+            stream.destroy(err);
             alive = false;
         });
 
@@ -92,25 +101,27 @@ export class EtcdClient {
             stop: (): void => {
                 alive = false;
                 stream.end();
+                stream.destroy();
             },
         };
     }
 
     async withLease(
-        options: { ttl?: number },
+        options: { ttl?: number; host?: string },
         fn: (leaseId: number) => void | Promise<void>
     ): Promise<void>;
     async withLease(fn: (leaseId: number) => void | Promise<void>): Promise<void>;
 
     async withLease(
-        p1: { ttl?: number } | ((leaseId: number) => void | Promise<void>),
+        p1: { ttl?: number; host?: string } | ((leaseId: number) => void | Promise<void>),
         p2?: (leaseId: number) => void | Promise<void>
     ): Promise<void> {
         const fn = p2 ? p2 : typeof p1 === 'function' ? p1 : () => void 0;
         const options = typeof p1 === 'function' ? {} : p1;
         const ttl = options.ttl || 30;
+        const host = options.host || sample(this.hosts);
 
-        const leaseClient = new LeaseClient(this.host, this.credentials);
+        const leaseClient = new LeaseClient(host, this.credentials);
         const leaseResponse = await this._getLease(leaseClient, ttl);
 
         // Keep automatically renewing the lease in the background.
@@ -132,9 +143,10 @@ export class EtcdClient {
     ): Promise<void> {
         const name = typeof options === 'string' ? options : options.name;
         const ttl = typeof options === 'string' ? undefined : options.ttl;
+        const host = sample(this.hosts);
 
-        await this.withLease({ ttl }, async (leaseId) => {
-            const lockClient = new LockClient(this.host, this.credentials);
+        await this.withLease({ ttl, host }, async (leaseId) => {
+            const lockClient = new LockClient(host, this.credentials);
             const lockRequest = new LockRequest();
             lockRequest.setName(name);
             lockRequest.setLease(leaseId);
@@ -153,7 +165,8 @@ export class EtcdClient {
     }
 
     async kvPut(key: string, value: string): Promise<void> {
-        const client = new KVClient(this.host, this.credentials);
+        const host = sample(this.hosts);
+        const client = new KVClient(host, this.credentials);
         const putRequest = new PutRequest();
         putRequest.setKey(key);
         putRequest.setValue(Buffer.from(value, 'utf-8'));
@@ -161,14 +174,16 @@ export class EtcdClient {
     }
 
     async kvGet(key: string): Promise<string | Uint8Array | undefined> {
-        const client = new KVClient(this.host, this.credentials);
+        const host = sample(this.hosts);
+
+        const client = new KVClient(host, this.credentials);
         const getRequest = new RangeRequest();
         getRequest.setKey(key);
         const result: RangeResponse = await pb.call((done: any) => client.range(getRequest, done));
         const list = result.getKvsList();
         if (list[0]) {
             const val = list[0].getValue();
-            if(typeof val === 'string') {
+            if (typeof val === 'string') {
                 return val;
             } else {
                 return Buffer.from(val).toString('utf-8');
@@ -179,7 +194,9 @@ export class EtcdClient {
     }
 
     async kvDelete(key: string): Promise<string | Uint8Array | undefined> {
-        const client = new KVClient(this.host, this.credentials);
+        const host = sample(this.hosts);
+
+        const client = new KVClient(host, this.credentials);
         const deleteRequest = new DeleteRangeRequest();
         deleteRequest.setKey(key);
         const result: DeleteRangeResponse = await pb.call((done: any) =>

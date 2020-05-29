@@ -4,7 +4,7 @@ import { EtcdClient } from '../src';
 
 describe('KV', function() {
     it('should put/get/delete a key', async function() {
-        const client = new EtcdClient('localhost:2379');
+        const client = new EtcdClient({ hosts: [ 'localhost:2379' ] });
 
         await client.kvPut('testkey', 'foobar');
         const result = await client.kvGet('testkey');
