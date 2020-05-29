@@ -1,3 +1,4 @@
+import { EventEmitter } from 'events';
 import * as grpc from 'grpc';
 import pb from 'promise-breaker';
 import promiseTools from 'promise-tools';
@@ -7,7 +8,11 @@ import {
     LockResponse,
     UnlockRequest,
 } from './client/etcd/etcdserver/api/v3lock/v3lockpb/v3lock_pb';
-import { KVClient, LeaseClient } from './client/etcd/etcdserver/etcdserverpb/rpc_grpc_pb';
+import {
+    KVClient,
+    LeaseClient,
+    WatchClient,
+} from './client/etcd/etcdserver/etcdserverpb/rpc_grpc_pb';
 import {
     DeleteRangeRequest,
     DeleteRangeResponse,
@@ -19,7 +24,12 @@ import {
     PutRequest,
     RangeRequest,
     RangeResponse,
+    WatchCancelRequest,
+    WatchCreateRequest,
+    WatchRequest,
+    WatchResponse,
 } from './client/etcd/etcdserver/etcdserverpb/rpc_pb';
+import { Event } from './client/etcd/mvcc/mvccpb/kv_pb';
 
 const LEASE_RETRY_COUNT = 1000;
 const MIN_LEASE_NUMBER = 100000;
@@ -28,6 +38,16 @@ function sample<T>(arr: T[]): T {
     const index = Math.floor(Math.random() * arr.length);
     return arr[index];
 }
+
+function decodeValue(val: string | Uint8Array) {
+    if (typeof val === 'string') {
+        return val;
+    } else {
+        return Buffer.from(val).toString('utf-8');
+    }
+}
+
+export type Watch = EventEmitter & { end: () => void };
 
 export class EtcdClient {
     private hosts: string[];
@@ -71,6 +91,7 @@ export class EtcdClient {
 
     private _keepLeaseAlive(leaseClient: LeaseClient, leaseId: number, ttl: number) {
         let alive = true;
+        let timeout: NodeJS.Timeout;
 
         const keepAlive = new LeaseKeepAliveRequest();
         keepAlive.setId(leaseId);
@@ -79,9 +100,8 @@ export class EtcdClient {
         stream.on('data', (_data: LeaseKeepAliveResponse) => {
             // console.log(`Got keepalive for ${data.getId()}`);
         });
-        stream.on('error', (err) => {
+        stream.on('error', (_err) => {
             // TODO: How do we publish this error?
-            stream.destroy(err);
             alive = false;
         });
 
@@ -90,7 +110,7 @@ export class EtcdClient {
                 return;
             }
             stream.write(keepAlive, {}, () => {
-                setTimeout(sendKeepAlive, (ttl * 1000) / 2);
+                timeout = setTimeout(sendKeepAlive, (ttl * 1000) / 2);
             });
         }
 
@@ -102,6 +122,9 @@ export class EtcdClient {
                 alive = false;
                 stream.end();
                 stream.destroy();
+                if(timeout) {
+                    clearTimeout(timeout);
+                }
             },
         };
     }
@@ -182,15 +205,62 @@ export class EtcdClient {
         const result: RangeResponse = await pb.call((done: any) => client.range(getRequest, done));
         const list = result.getKvsList();
         if (list[0]) {
-            const val = list[0].getValue();
-            if (typeof val === 'string') {
-                return val;
-            } else {
-                return Buffer.from(val).toString('utf-8');
-            }
+            return decodeValue(list[0].getValue());
         } else {
             return undefined;
         }
+    }
+
+    kvWatch(key: string): Watch {
+        const host = sample(this.hosts);
+        const client = new WatchClient(host, this.credentials);
+        let watchId = -1;
+
+        const stream = client.watch();
+        const errorHandler = (err: Error) => watch.emit('error', err);
+
+        const watch = new EventEmitter() as Watch;
+        watch.end = () => {
+            if (watchId !== -1) {
+                const watchCancelRequest = new WatchCancelRequest();
+                watchCancelRequest.setWatchId(watchId);
+                const watchRequest = new WatchRequest();
+                watchRequest.setCancelRequest(watchCancelRequest);
+                stream.write(watchRequest);
+            }
+
+            stream.end();
+
+            stream.off('error', errorHandler);
+            stream.on('error', () => void 0);
+            stream.cancel();
+        };
+
+        const watchCreateRequest = new WatchCreateRequest();
+        watchCreateRequest.setKey(Buffer.from(key, 'utf-8'));
+        const watchRequest = new WatchRequest();
+        watchRequest.setCreateRequest(watchCreateRequest);
+
+        stream.write(watchRequest);
+
+        stream.on('data', (chunk: WatchResponse) => {
+            watchId = chunk.getWatchId();
+            const events = chunk.getEventsList();
+            for (const event of events) {
+                const type = event.getType();
+                const kv = event.getKv();
+                if (type === Event.EventType.PUT && kv) {
+                    const val = decodeValue(kv.getValue());
+                    watch.emit('put', val);
+                } else {
+                    watch.emit('put', undefined);
+                }
+            }
+        });
+
+        stream.on('error', errorHandler);
+
+        return watch;
     }
 
     async kvDelete(key: string): Promise<string | undefined> {
