@@ -1,6 +1,6 @@
 {
   "name": "etcd3-ts",
-  "version": "0.0.0-semantic-release",
+  "version": "1.0.0",
   "description": "Etcd3 bindings in Typescript",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
