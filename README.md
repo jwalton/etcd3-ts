@@ -4,7 +4,8 @@
 [![Build Status](https://travis-ci.org/jwalton/etcd3-ts.svg)](https://travis-ci.org/jwalton/etcd3-ts)
 [![Coverage Status](https://coveralls.io/repos/jwalton/etcd3-ts/badge.svg)](https://coveralls.io/r/jwalton/etcd3-ts)
 
-This is an etcd client. It's very incomplete.
+This is an etcd client. It's very incomplete, but it has support for basic
+key-value operations, watches, and locks.
 
 ## Usage
 
@@ -25,6 +26,10 @@ async myFunction() {
     console.log('Do work here...');
     await delay(2000);
   });
+
+  await client.kvPut('key', 'value');
+  const value = await client.kvGet('key');
+  await client.kvDelete('key');
 }
 ```
 
