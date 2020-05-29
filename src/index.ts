@@ -63,6 +63,8 @@ export class EtcdClient {
         } else {
             this.hosts = options.hosts;
         }
+        this.hosts = this.hosts.map((host) => (host.startsWith('http://') ? host.slice(7) : host));
+
         this.credentials = grpc.credentials.createInsecure();
     }
 
@@ -266,6 +268,12 @@ export class EtcdClient {
         });
 
         stream.on('error', errorHandler);
+
+        // Get the value and call the watch function immediately
+        this.kvGet(key).then(
+            (val) => watch.emit('put', val),
+            () => /* ignore error */ void 0
+        );
 
         return watch;
     }
