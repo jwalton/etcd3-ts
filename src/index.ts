@@ -122,24 +122,31 @@ export class EtcdClient {
                 alive = false;
                 stream.end();
                 stream.destroy();
-                if(timeout) {
+                if (timeout) {
                     clearTimeout(timeout);
                 }
             },
         };
     }
 
-    async withLease(
+    async withLease<T = void>(
         options: { ttl?: number; host?: string },
-        fn: (leaseId: number) => void | Promise<void>
-    ): Promise<void>;
-    async withLease(fn: (leaseId: number) => void | Promise<void>): Promise<void>;
+        fn: (leaseId: number) => T | Promise<T>
+    ): Promise<T>;
+    async withLease<T = void>(fn: (leaseId: number) => T | Promise<T>): Promise<T>;
 
-    async withLease(
-        p1: { ttl?: number; host?: string } | ((leaseId: number) => void | Promise<void>),
-        p2?: (leaseId: number) => void | Promise<void>
-    ): Promise<void> {
-        const fn = p2 ? p2 : typeof p1 === 'function' ? p1 : () => void 0;
+    async withLease<T = void>(
+        p1: { ttl?: number; host?: string } | ((leaseId: number) => T | Promise<T>),
+        p2?: (leaseId: number) => T | Promise<T>
+    ): Promise<T> {
+        let fn: (leaseId: number) => T | Promise<T>;
+        if (p2) {
+            fn = p2;
+        } else if (typeof p1 === 'function') {
+            fn = p1;
+        } else {
+            throw new Error('Invalid function');
+        }
         const options = typeof p1 === 'function' ? {} : p1;
         const ttl = options.ttl || 30;
         const host = options.host || sample(this.hosts);
@@ -151,7 +158,7 @@ export class EtcdClient {
         const { stop } = this._keepLeaseAlive(leaseClient, leaseResponse.getId(), ttl);
 
         try {
-            await fn(leaseResponse.getId());
+            return await fn(leaseResponse.getId());
         } finally {
             stop();
             const leaseRevokeRequest = new LeaseRevokeRequest();
@@ -160,15 +167,15 @@ export class EtcdClient {
         }
     }
 
-    async withLock(
+    async withLock<T = void>(
         options: string | { name: string; ttl?: number },
-        fn: () => void | Promise<void>
-    ): Promise<void> {
+        fn: () => T | Promise<T>
+    ): Promise<T> {
         const name = typeof options === 'string' ? options : options.name;
         const ttl = typeof options === 'string' ? undefined : options.ttl;
         const host = sample(this.hosts);
 
-        await this.withLease({ ttl, host }, async (leaseId) => {
+        return await this.withLease({ ttl, host }, async (leaseId) => {
             const lockClient = new LockClient(host, this.credentials);
             const lockRequest = new LockRequest();
             lockRequest.setName(Buffer.from(name, 'utf-8'));
@@ -178,7 +185,7 @@ export class EtcdClient {
             );
 
             try {
-                await fn();
+                return await fn();
             } finally {
                 const unlockRequest = new UnlockRequest();
                 unlockRequest.setKey(lockResponse.getKey());
