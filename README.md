@@ -41,6 +41,7 @@ Checkout etcd, and then run `genGrpc.sh`.
 $ git clone git@github.com:etcd-io/etcd.git
 $ cd etcd
 $ git checkout v3.4.9
+$ go mod vendor
 $ cd ..
 $ ./scripts/genGrpc.sh
 $ npm run build
