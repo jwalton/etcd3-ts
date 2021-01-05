@@ -7,6 +7,8 @@
 This is an etcd client. It's very incomplete, but it has support for basic
 key-value operations, watches, and locks.
 
+**Note that this is no longer maintained.**  This was written because [etcd3](https://github.com/microsoft/etcd3) was not being maintained, but that library seems to have moved into the microsoft github account, so hopefully we'll see more frequent updates to it.  And if not, this can always be resurrected.
+
 ## Usage
 
 ```sh
